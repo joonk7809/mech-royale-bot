@@ -1,14 +1,16 @@
+import importlib
 import json
 import os
 import sys
 import traceback
 
 from bots.main import bot as main_bot
-from bots.main_v1ag import bot as v1_bot
-from bots.main_v1ag import nav as v1_nav
 
 NAME = "main"
-V1_KW = {"squad_press": True}
+SQUAD = os.environ.get("MECH_DUAL_SQUAD", "duel")
+V1_KW = {"main_v1ag": {"squad_press": True}}.get(SQUAD, {})
+v1_bot = importlib.import_module(f"bots.{SQUAD}.bot")
+v1_nav = importlib.import_module(f"bots.{SQUAD}.nav")
 
 _v1_load = v1_nav.load
 _V1_LOCAL = {}
