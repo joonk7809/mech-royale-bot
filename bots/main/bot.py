@@ -842,6 +842,10 @@ class Bot:
         self.climbing = (not me["grounded"] and me["energy"] > 2) or me["energy"] >= self.cfg["climb_energy"]
         return u, me["energy"] > 2, me["grounded"]
 
+    def _pinned(self):
+        h = self.hist
+        return not self.cfg["pinned_check"] or sum(math.dist(h[k][1], h[k + 1][1]) for k in range(len(h) - 1)) < 1.5
+
     def _unstick(self, mv):
         t = self.t
         me = self.me
@@ -851,7 +855,7 @@ class Bot:
         jet = me["energy"] > 20
         if t < self.stuck_until:
             return self.escape, jet and me["grounded"] and not self._grounded(), jet
-        if math.hypot(*mv) > 0.5 and len(self.hist) > 8 and t - self.hist[0][0] > 1.0 and math.dist(self.hist[0][1], self.xy) < 1.5:
+        if math.hypot(*mv) > 0.5 and len(self.hist) > 8 and t - self.hist[0][0] > 1.0 and math.dist(self.hist[0][1], self.xy) < 1.5 and self._pinned():
             self.stuck_n += 1
             self.stuck_t = t
             self.stuck_until = t + 0.8

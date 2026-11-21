@@ -30,6 +30,7 @@ DEFAULT = {
     "zone_frac": 0.55,
     "cover_hold": True,
     "climb_out": True,
+    "pinned_check": False,
     "grounded": False,
     "grounded_ffa_only": False,
     "climb_energy": 90.0,
