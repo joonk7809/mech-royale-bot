@@ -1,3 +1,4 @@
+import gc
 import math
 import random
 import sys
@@ -57,6 +58,8 @@ class Bot:
         self.escape = (0.0, 0.0)
         self.F_alt = nav.Follower(self.W.local) if hasattr(self.W, "local") else self.F
         self._warm()
+        gc.collect()
+        gc.freeze()
         self.cover_cache = None
         self.my_kills = 0
         self.squad = None
