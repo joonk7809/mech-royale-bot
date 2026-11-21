@@ -42,6 +42,7 @@ DEFAULT = {
     "avoid_r": 115.0,
     "squad_press": True,
     "duelist": True,
+    "grounded": False,
     "den_r": 120.0,
     "den_leash": 30.0,
     "heal_to": 0.9,

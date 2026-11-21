@@ -111,6 +111,10 @@ class Bot:
         aim_y, aim_p, fire = self._combat(enemies)
         mv, boost, jump = self._move(enemies)
         mv, boost = self._dodge(mv, boost, enemies)
+        if self.cfg["grounded"]:
+            jump = False
+            if not me["grounded"]:
+                boost = False
         if aim_y is None:
             aim_y, aim_p = self._scan(mv)
         a["move"] = [round(mv[0], 4), round(mv[1], 4)]
@@ -700,14 +704,14 @@ class Bot:
             charging = any(w and w.get("charge", 0) > 0 for w in me["weapons"])
             fb = self.cfg["fight_boost"] and not charging and me["energy"] > self.cfg["fight_boost_energy"]
             return mv, fb, False
-        if goal is not None and self.cfg["climb_out"] and self._no_route(goal[:2]):
+        if goal is not None and self.cfg["climb_out"] and not self.cfg["grounded"] and self._no_route(goal[:2]):
             self.mode += "+climb"
             return self._climb(goal[:2])
         if goal is None:
             mv = (0.0, 0.0)
         else:
             mv = self._nav_to(goal[:2])
-            if len(goal) > 2 and goal[2] - self.pos[2] > 2.5 and math.dist(self.xy, goal[:2]) < 14 and me["energy"] > 25:
+            if not self.cfg["grounded"] and len(goal) > 2 and goal[2] - self.pos[2] > 2.5 and math.dist(self.xy, goal[:2]) < 14 and me["energy"] > 25:
                 jump = me["grounded"]
                 boost = True
             if self.mode == "hold" and self.cfg["silent"] and not self.zone_urgent:

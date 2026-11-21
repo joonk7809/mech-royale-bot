@@ -41,6 +41,7 @@ DEFAULT = {
     "squad_avoid": False,
     "avoid_r": 115.0,
     "squad_press": False,
+    "grounded": False,
     "press_r": 150.0,
     "press_min_hp": 0.35,
     "retreat_hp": 0.45,
