@@ -6,4 +6,5 @@ COPY geo /bot/geo
 RUN python3 -m compileall -q /bot
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV MECH_DUAL_SEED=urandom
+ENV MECH_DUAL_V1='{"squad_press":true,"press_r":100}'
 ENTRYPOINT ["python3", "-u", "/bot/bots/run_stdio.py", "dual"]
