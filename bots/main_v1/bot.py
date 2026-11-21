@@ -324,10 +324,12 @@ class Bot:
                 aggro = t - m.aggro_t < 4.0
                 others = sum(1 for o in enemies if o is not m and math.dist((o.pos[0], o.pos[1]), self.xy) < self.cfg["third_party_radius"] and (t - o.aggro_t < 6.0 or self._aims_at_me(o, 0.35)))
                 odds = self._odds(m)
-                if aggro or (d < 60):
+                if aggro or (d < 60 and not self.cfg["squad_avoid"]):
                     target = m
                     self.fight = odds >= self.cfg["engage_ratio"] * (1.0 + 0.5 * others) or d < 25
                     break
+                if self.cfg["squad_avoid"] and not aggro:
+                    continue
                 if m.hp < self.cfg["opportunist_hp"] * me["hp"] and others == 0 and odds >= 1.6 and d < 200:
                     target = m
                     self.fight = True
@@ -348,6 +350,24 @@ class Bot:
             return self._shoot_static(nt, fire)
         return None, 0.0, fire
 
+    def _near_passive(self, p, r):
+        return any(self.t - m.aggro_t >= 4.0 and math.dist((m.pos[0], m.pos[1]), (p[0], p[1])) < r for m in self.enemies)
+
+    def _avoid_dir(self):
+        r = self.cfg["avoid_r"]
+        near = [(m, math.dist(self.xy, (m.pos[0], m.pos[1]))) for m in self.enemies]
+        near = [(m, d) for m, d in near if d < r]
+        passive = [m for m, d in near if self.t - m.aggro_t >= 4.0]
+        if not passive and len(near) < 2:
+            return None
+        ax = ay = 0.0
+        for m, d in near:
+            u = _unit(self.xy[0] - m.pos[0], self.xy[1] - m.pos[1])
+            w = (r - d) / r + 0.2
+            ax += u[0] * w
+            ay += u[1] * w
+        return _unit(ax, ay)
+
     def _pve_target(self):
         if not self.cfg["loot"] or self.t > self.cfg["loot_until"] or self.zone_urgent:
             return None
@@ -361,6 +381,8 @@ class Bot:
                 d = math.dist(self.xy, (p[0], p[1]))
                 if d > 150 or not self._in_safe((p[0], p[1]), 30):
                     continue
+                if self.cfg["squad_avoid"] and self._near_passive(p, self.cfg["avoid_r"]):
+                    continue
                 s = d + hp / 10.0
                 if best is None or s < best[0]:
                     best = (s, ("npc", i, p, v))
@@ -370,6 +392,8 @@ class Bot:
                     continue
                 d = math.dist(self.xy, (p[0], p[1]))
                 if d > 110 or not self._in_safe((p[0], p[1]), 20):
+                    continue
+                if self.cfg["squad_avoid"] and self._near_passive(p, self.cfg["avoid_r"]):
                     continue
                 s = d + 30
                 if best is None or s < best[0]:
@@ -518,6 +542,8 @@ class Bot:
                 v *= 0.6
             if any(math.dist((m.pos[0], m.pos[1]), (p[0], p[1])) < 70 for m in self.enemies):
                 v *= 0.25
+            if self.cfg["squad_avoid"] and self._near_passive(p, self.cfg["avoid_r"]):
+                continue
             if not hp_ok:
                 v *= 0.3
             s = v / (d + 25.0)
@@ -539,7 +565,7 @@ class Bot:
             travel = d / self.me["stats"]["walk_speed"]
             if travel > dr["lands_in"] + 20:
                 continue
-            near = [m for m in self.enemies if math.dist((m.pos[0], m.pos[1]), (p[0], p[1])) < self.cfg["drop_enemy_clear"]]
+            near = [m for m in self.enemies if math.dist((m.pos[0], m.pos[1]), (p[0], p[1])) < (self.cfg["avoid_r"] if self.cfg["squad_avoid"] else self.cfg["drop_enemy_clear"])]
             if near:
                 continue
             if best is None or d < best[0]:
@@ -557,7 +583,17 @@ class Bot:
         hp_frac = me["hp"] / me["max_hp"]
         e = self.engaged
         cover_from = [((m.pos[0], m.pos[1], m.pos[2] + 7.5)) for m in self.threats if t - m.seen < 3.0]
-        if self.zone_urgent:
+        av = self._avoid_dir() if self.cfg["squad_avoid"] and not self.zone_urgent else None
+        if av is not None:
+            self.mode = "avoid"
+            hp_ = self._hold_point()
+            tz = _unit(hp_[0] - self.xy[0], hp_[1] - self.xy[1])
+            u = _unit(av[0] + 0.4 * tz[0], av[1] + 0.4 * tz[1])
+            goal = (self.xy[0] + u[0] * 30.0, self.xy[1] + u[1] * 30.0)
+            if not self._in_live(goal, 4.0):
+                goal = hp_
+            boost = me["energy"] > 30
+        elif self.zone_urgent:
             self.mode = "rotate"
             goal = self._hold_point()
             boost = (not me["in_zone"] or (self.zone_deadline is not None and self.t + self.zone_need * 0.8 + 4 > self.zone_deadline)) and (me["energy"] > self.cfg["boost_reserve"] or self.nr < 80)
@@ -658,7 +694,7 @@ class Bot:
 
     def _fight_move(self, e):
         d = math.dist(self.xy, (e.pos[0], e.pos[1]))
-        return self._strafe(e.pos, d, want_range(self.kinds, e.weapons, self.C["weapons"]))
+        return self._strafe(e.pos, d, want_range(self.kinds, e.weapons, self.C["weapons"]) * self.cfg["fight_range_scale"])
 
     def _strafe(self, tp, d, want):
         t = self.t

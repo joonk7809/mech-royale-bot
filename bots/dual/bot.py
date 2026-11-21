@@ -1,12 +1,14 @@
+import json
 import os
 import sys
 import traceback
 
 from bots.main import bot as main_bot
-from bots.main_v1 import bot as v1_bot
-from bots.main_v1 import nav as v1_nav
+from bots.main_v1ag import bot as v1_bot
+from bots.main_v1ag import nav as v1_nav
 
 NAME = "main"
+V1_KW = {"squad_press": True}
 
 _v1_load = v1_nav.load
 _V1_LOCAL = {}
@@ -44,7 +46,8 @@ class Bot:
         except Exception:
             _log()
         try:
-            self.v1 = v1_bot.Bot(hello, **(v1_kw or {}))
+            env = os.environ.get("MECH_DUAL_V1")
+            self.v1 = v1_bot.Bot(hello, **dict(V1_KW, **(json.loads(env) if env else {}), **(v1_kw or {})))
         except Exception:
             _log()
         self.navkind = getattr(self.main, "navkind", None)
