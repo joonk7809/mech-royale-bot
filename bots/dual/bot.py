@@ -36,7 +36,8 @@ def _log():
 
 
 class Bot:
-    def __init__(self, hello, seed_mode=None, main_kw=None, v1_kw=None, **kw):
+    def __init__(self, hello, seed_mode=None, main_kw=None, v1_kw=None, opening=None, **kw):
+        self.open = opening or os.environ.get("MECH_DUAL_OPEN", "main")
         mode = seed_mode or os.environ.get("MECH_DUAL_SEED", "hello")
         if mode == "urandom":
             hello = dict(hello, seed=int.from_bytes(os.urandom(4), "little"))
@@ -66,7 +67,8 @@ class Bot:
     def act(self, obs):
         am = self._call(self.main, obs)
         av = self._call(self.v1, obs)
-        sq = getattr(self.main, "squad", None) is True
+        st = getattr(self.main, "squad", None)
+        sq = st is True or (st is None and self.open == "v1")
         if sq != self.use_v1:
             self.use_v1 = sq
             self.switches.append((obs.get("t"), sq))
