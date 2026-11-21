@@ -65,6 +65,8 @@ def main(name):
                 log(f"{name}: hello {1000 * (time.perf_counter() - t0):.0f} ms nav={getattr(bot, 'navkind', None)}")
                 send(out, {"type": "ready", "name": str(getattr(mod, "NAME", name))[:32]})
             elif kind == "obs":
+                if latest is not None and latest.get("events"):
+                    msg["events"] = latest["events"] + (msg.get("events") or [])
                 latest = msg
             elif kind == "end":
                 if bot is not None:

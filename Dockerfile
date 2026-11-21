@@ -5,4 +5,5 @@ COPY bots /bot/bots
 COPY geo /bot/geo
 RUN python3 -m compileall -q /bot
 ENV PYTHONDONTWRITEBYTECODE=1
-ENTRYPOINT ["python3", "-u", "/bot/bots/run_stdio.py", "main"]
+ENV MECH_DUAL_SEED=urandom
+ENTRYPOINT ["python3", "-u", "/bot/bots/run_stdio.py", "dual"]

@@ -58,6 +58,10 @@ class Bot:
         self.F_alt = nav.Follower(self.W.local) if hasattr(self.W, "local") else self.F
         self._warm()
         self.cover_cache = None
+        self.my_kills = 0
+        self.squad = None
+        self.squad_on_t = None
+        self.squad_off = None
         self.short_until = -1.0
         self.last_ok = {}
         self.spot = None
@@ -103,6 +107,9 @@ class Bot:
                 self.last_dmg_t = t
             elif ty == "effect" and e.get("effect") == "short":
                 self.short_until = t + self.C["weapons"]["lightning"]["short_s"]
+            elif ty == "kill":
+                self.my_kills += 1
+        self._squad_detect()
         self.wk = [w["kind"] if w else None for w in me["weapons"]]
         self.kinds = tuple(k for k in self.wk if k)
         self._zone()
@@ -127,6 +134,21 @@ class Bot:
         if self.cfg["debug_draw"]:
             a["debug"] = {"label": f"{self.mode} {self.label}"[:78]}
         return a
+
+    def _squad_detect(self):
+        if not self.cfg["squad_detect"] or self.squad is False:
+            return
+        other = 16 - self.obs["alive"] - self.my_kills
+        if self.squad is None:
+            if other > self.cfg["squad_on_slack"]:
+                self.squad = False
+                self.squad_off = (self.t, other)
+            elif self.t >= self.cfg["squad_detect_t"]:
+                self.squad = True
+                self.squad_on_t = self.t
+        elif other > self.cfg["squad_off_slack"] and self.t < self.cfg["squad_lock_t"]:
+            self.squad = False
+            self.squad_off = (self.t, other)
 
     def _zone(self):
         z = self.obs["zone"]
@@ -400,7 +422,7 @@ class Bot:
                 target = None
             self.fight = False
         self.break_from = None
-        if self.cfg["targeted_break_los"] and self.obs["alive"] >= self.cfg["break_min_alive"] and self.me["in_zone"]:
+        if self.cfg["targeted_break_los"] and not self.squad and self.obs["alive"] >= self.cfg["break_min_alive"] and self.me["in_zone"]:
             src = self._targeted_sources(enemies)
             if src:
                 win = target is not None and self.fight and self._odds(target) >= self.cfg["clear_win_ratio"]
@@ -750,7 +772,7 @@ class Bot:
 
     def _fight_move(self, e):
         d = math.dist(self.xy, (e.pos[0], e.pos[1]))
-        return self._strafe(e.pos, d, want_range(self.kinds, e.weapons, self.C["weapons"]))
+        return self._strafe(e.pos, d, want_range(self.kinds, e.weapons, self.C["weapons"]) * self.cfg["fight_range_scale"])
 
     def _strafe(self, tp, d, want):
         t = self.t
