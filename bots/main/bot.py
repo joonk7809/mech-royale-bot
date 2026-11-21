@@ -125,7 +125,7 @@ class Bot:
         aim_y, aim_p, fire = self._combat(enemies)
         mv, boost, jump = self._move(enemies)
         mv, boost = self._dodge(mv, boost, enemies)
-        if self.cfg["grounded"]:
+        if self._grounded():
             jump = False
             if not me["grounded"]:
                 boost = False
@@ -141,6 +141,9 @@ class Bot:
         if self.cfg["debug_draw"]:
             a["debug"] = {"label": f"{self.mode} {self.label}"[:78]}
         return a
+
+    def _grounded(self):
+        return self.cfg["grounded"] and (not self.cfg["grounded_ffa_only"] or self.squad is False)
 
     def _squad_detect(self):
         if not self.cfg["squad_detect"] or self.squad is False:
@@ -750,14 +753,14 @@ class Bot:
             charging = any(w and w.get("charge", 0) > 0 for w in me["weapons"])
             fb = self.cfg["fight_boost"] and not charging and me["energy"] > self.cfg["fight_boost_energy"]
             return mv, fb, False
-        if goal is not None and self.cfg["climb_out"] and not self.cfg["grounded"] and self._no_route(goal[:2]):
+        if goal is not None and self.cfg["climb_out"] and not self._grounded() and self._no_route(goal[:2]):
             self.mode += "+climb"
             return self._climb(goal[:2])
         if goal is None:
             mv = (0.0, 0.0)
         else:
             mv = self._nav_to(goal[:2])
-            if not self.cfg["grounded"] and len(goal) > 2 and goal[2] - self.pos[2] > 2.5 and math.dist(self.xy, goal[:2]) < 14 and me["energy"] > 25:
+            if not self._grounded() and len(goal) > 2 and goal[2] - self.pos[2] > 2.5 and math.dist(self.xy, goal[:2]) < 14 and me["energy"] > 25:
                 jump = me["grounded"]
                 boost = True
             if self.mode == "hold" and self.cfg["silent"] and not self.zone_urgent:
@@ -847,7 +850,7 @@ class Bot:
             self.hist.pop(0)
         jet = me["energy"] > 20
         if t < self.stuck_until:
-            return self.escape, jet and me["grounded"] and not self.cfg["grounded"], jet
+            return self.escape, jet and me["grounded"] and not self._grounded(), jet
         if math.hypot(*mv) > 0.5 and len(self.hist) > 8 and t - self.hist[0][0] > 1.0 and math.dist(self.hist[0][1], self.xy) < 1.5:
             self.stuck_n += 1
             self.stuck_t = t
@@ -861,7 +864,7 @@ class Bot:
                 if hasattr(f, "stuck_t"):
                     f.stuck_t = 9.0
             self.hist.clear()
-            return self.escape, jet and me["grounded"] and not self.cfg["grounded"], jet
+            return self.escape, jet and me["grounded"] and not self._grounded(), jet
         return mv, False, False
 
     def _dodge(self, mv, boost, enemies):
