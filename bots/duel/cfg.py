@@ -76,7 +76,7 @@ DEFAULT = {
 
 def make(overrides=None):
     c = dict(DEFAULT)
-    env = os.environ.get("MECH_MAIN_CFG")
+    env = os.environ.get("MECH_SQUAD_CFG")
     if env:
         c.update(json.loads(env))
     if overrides:
