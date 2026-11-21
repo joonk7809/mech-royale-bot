@@ -52,6 +52,8 @@ class Bot:
         self.F_alt = nav.Follower(self.W.local) if hasattr(self.W, "local") else self.F
         self._warm()
         self.cover_cache = None
+        self.lock = None
+        self.jump_t = 0.0
         self.short_until = -1.0
         self.last_ok = {}
         self.spot = None
@@ -109,6 +111,8 @@ class Bot:
         aim_y, aim_p, fire = self._combat(enemies)
         mv, boost, jump = self._move(enemies)
         mv, boost = self._dodge(mv, boost, enemies)
+        if self.cfg["fight_jump"]:
+            jump = self._fight_jump(enemies) or jump
         if self.cfg["grounded"]:
             jump = False
             if not me["grounded"]:
@@ -321,7 +325,13 @@ class Bot:
             if aggro or close:
                 self.threats.append(m)
         target = None
-        if self.cfg["squad_press"]:
+        if self.cfg["finish_low"] and self.lock is not None and me["hp"] > self.cfg["finish_min_hp"] * me["max_hp"]:
+            m = next((m for m in enemies if m.id == self.lock and t - m.seen < 1.5), None)
+            if m is not None and m.hp < self.cfg["finish_frac"] * m.max_hp:
+                target = m
+                self.fight = True
+                vis = []
+        if target is None and self.cfg["squad_press"]:
             near = [(m, math.dist(self.xy, (m.pos[0], m.pos[1]))) for m in vis]
             near = [(m, d) for m, d in near if d < self.cfg["press_r"]]
             if near:
@@ -355,6 +365,7 @@ class Bot:
             if t - m.seen < 3.0 and t - m.aggro_t < 4.0:
                 target = m
         self.engaged = target
+        self.lock = target.id if target is not None else None
         if target is not None:
             return self._shoot_mech(target, fire)
         nt = self._pve_target()
@@ -782,6 +793,19 @@ class Bot:
             self.hist.clear()
             return self.escape, jet and me["grounded"], jet
         return mv, False, False
+
+    def _fight_jump(self, enemies):
+        me = self.me
+        t = self.t
+        if not me["grounded"] or me["energy"] < self.cfg["jump_energy"] or t < self.jump_t:
+            return False
+        r = self.cfg["jump_r"]
+        hot = [m for m in enemies if t - m.seen < 0.5 and math.dist(self.xy, (m.pos[0], m.pos[1])) < r and (t - m.aggro_t < 4.0 or self._aims_at_me(m, 0.25))]
+        if not hot:
+            return False
+        lo, hi = self.cfg["jump_gap"]
+        self.jump_t = t + self.rng.uniform(lo, hi)
+        return True
 
     def _dodge(self, mv, boost, enemies):
         me = self.me
