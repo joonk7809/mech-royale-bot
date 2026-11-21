@@ -84,9 +84,17 @@ class World:
     def _build_solids(self, prisms, ground_tol):
         nx, ny = self.nx, self.ny
         cells, base, top, kind = rasterize_prisms(prisms, self.x0, self.y0, self.res, nx, ny)
-        mc, mlo, mhi, mk = merge_intervals(cells, base, top, kind, 0.05)
-        if mc.size > 1 and not (np.diff(mc) > 0).all():
-            raise ValueError("stacked prism intervals with gaps are not supported")
+        mc, mlo, mhi, mk = merge_intervals(cells, base, top, kind, 0.25)
+        first = np.ones(mc.size, dtype=bool)
+        first[1:] = mc[1:] != mc[:-1]
+        self.stacked_cells = int((~first).sum())
+        if self.stacked_cells:
+            si = np.nonzero(first)[0]
+            last = np.r_[si[1:], mc.size] - 1
+            mlo = np.minimum.reduceat(mlo, si)
+            mhi = np.maximum.reduceat(mhi, si)
+            mk = mk[last]
+            mc = mc[si]
         g = np.round(self.cell_ground().ravel() * 100.0).astype(np.int16)
         self.lo = np.full(nx * ny, LO_NONE, dtype=np.int16)
         self.hi = np.full(nx * ny, HI_NONE, dtype=np.int16)

@@ -40,6 +40,9 @@ class Bot:
         self.label = ""
         self.spot_key = None
         self.errors = 0
+        self.break_from = None
+        self.break_until = -1.0
+        self.last_break = None
         self.nav_errors = 0
         self.stuck_n = 0
         self.stuck_t = -1e9
@@ -47,6 +50,9 @@ class Bot:
         self.route_goal = (1e9, 1e9)
         self.no_route = False
         self.climbing = False
+        self.climb_ref = None
+        self.climb_t = 0.0
+        self.climb_k = 0
         self.alt_until = -1.0
         self.escape = (0.0, 0.0)
         self.F_alt = nav.Follower(self.W.local) if hasattr(self.W, "local") else self.F
@@ -172,39 +178,52 @@ class Bot:
             return P
         u = _unit(P[0] - nc[0], P[1] - nc[1])
         base = (nc[0] + u[0] * nr * frac, nc[1] + u[1] * nr * frac)
-        if not self.cfg["cover_hold"] or nr < 30:
-            return base
         key = (self.phase_key, round(base[0] / 15), round(base[1] / 15))
         if self.spot_key != key:
             self.spot_key = key
-            self.spot = self._wall_spot(base, min(30.0, nr * 0.25))
+            self.spot = self._wall_spot(base, max(3.0, min(30.0, nr * 0.25)), self.cfg["cover_hold"] and nr >= 30)
         return self.spot
 
-    def _wall_spot(self, base, rad):
+    def _wall_spot(self, base, rad, walls):
         W = getattr(self.W, "local", self.W)
         rng = self.rng
-        cands = [base] + [(base[0] + r * math.cos(a), base[1] + r * math.sin(a)) for r, a in ((rng.uniform(4, rad), rng.uniform(0, 2 * math.pi)) for _ in range(40))]
-        cands = [c for c in cands if W.walkable(c)]
+        lim = max(3.0, self.nr * 0.85)
+        cands = [base] + [(base[0] + r * math.cos(a), base[1] + r * math.sin(a)) for r, a in ((rng.uniform(2, rad), rng.uniform(0, 2 * math.pi)) for _ in range(40))]
+        cands += [(self.nc[0] + r * math.cos(a), self.nc[1] + r * math.sin(a)) for r, a in ((rng.uniform(0, lim * 0.7), rng.uniform(0, 2 * math.pi)) for _ in range(12))]
+        cands = [c for c in cands if math.dist(c, self.nc) <= lim and self.W.walkable(c)]
         if not cands:
             return base
+        dm = getattr(self.W, "dist_many", None)
+        if dm is not None:
+            pl = dm(self.xy, cands)
+            keep = [(c, float(L)) for c, L in zip(cands, pl) if L < 1.6 * math.dist(self.xy, c) + 25.0]
+            if keep:
+                cands = [c for c, _ in keep]
+                plen = [L for _, L in keep]
+            else:
+                plen = [math.dist(self.xy, c) for c in cands]
+        else:
+            plen = [math.dist(self.xy, c) for c in cands]
         ang = [k * math.pi / 4 for k in range(8)]
-        A = []
-        B = []
-        for c in cands:
-            z = W.ground(c[0], c[1]) + 5.0
-            for a in ang:
-                A.append((c[0], c[1], z))
-                B.append((c[0] + 9.0 * math.cos(a), c[1] + 9.0 * math.sin(a), z))
-        clear = W.los_many(A, B)
-        best = base
+        clear = None
+        if walls:
+            A = []
+            B = []
+            for c in cands:
+                z = W.ground(c[0], c[1]) + 5.0
+                for a in ang:
+                    A.append((c[0], c[1], z))
+                    B.append((c[0] + 9.0 * math.cos(a), c[1] + 9.0 * math.sin(a), z))
+            clear = W.los_many(A, B)
+        best = cands[0]
         bs = -1e9
         for k, c in enumerate(cands):
-            out = math.atan2(c[1] - self.nc[1], c[0] - self.nc[0])
-            sc = 0.0
-            for q, a in enumerate(ang):
-                if not clear[k * 8 + q]:
-                    sc += 1.0 + 1.5 * max(0.0, math.cos(a - out))
-            sc -= math.dist(c, base) / 15.0
+            sc = -math.dist(c, base) / 15.0 - plen[k] / 40.0
+            if clear is not None:
+                out = math.atan2(c[1] - self.nc[1], c[0] - self.nc[0])
+                for q, a in enumerate(ang):
+                    if not clear[k * 8 + q]:
+                        sc += 1.0 + 1.5 * max(0.0, math.cos(a - out))
             if sc > bs:
                 bs, best = sc, c
         return best
@@ -288,6 +307,43 @@ class Bot:
         s += m.hp / 40.0
         return s
 
+    def _targeted_sources(self, enemies):
+        t = self.t
+        me = self.me
+        out = []
+        for m in enemies:
+            if t - m.seen > 3.0:
+                continue
+            d = math.dist(self.xy, (m.pos[0], m.pos[1]))
+            hot = t - m.aggro_t < 1.5
+            aim = d < 240 and self._aims_at_me(m, math.atan2(4.0, max(d, 1.0)) + 0.03)
+            if hot or aim or (m.charging and self._aims_at_me(m, 0.25)):
+                out.append((m.pos[0], m.pos[1], m.pos[2] + 7.5))
+        R = me["stats"]["radius"] + 2.0
+        cz = self.pos[2] + me["stats"]["height"] * 0.5
+        for pr in self.obs["projectiles"]:
+            if pr["kind"] == "mortar":
+                continue
+            b, u = pr["pos"], pr["vel"]
+            rx, ry, rz = b[0] - self.xy[0], b[1] - self.xy[1], b[2] - cz
+            uu = u[0] * u[0] + u[1] * u[1] + u[2] * u[2]
+            if uu < 1.0:
+                continue
+            ts = -(rx * u[0] + ry * u[1] + rz * u[2]) / uu
+            if 0.0 < ts < 1.0 and math.hypot(rx + u[0] * ts, ry + u[1] * ts) < R:
+                n = math.sqrt(uu)
+                out.append((b[0] - u[0] / n * 80.0, b[1] - u[1] / n * 80.0, b[2] - u[2] / n * 80.0 + 1.0))
+        for (ts, b, w, by) in self.track.bearings:
+            if t - ts < 1.0:
+                out.append((self.xy[0] + 80.0 * math.cos(b), self.xy[1] + 80.0 * math.sin(b), self.pos[2] + 8.0))
+        for s in self.track.sound_threats(t, self.pos, 1.0):
+            if s[0] == "laser_charge" and s[2] != "far":
+                out.append((s[3][0], s[3][1], self.pos[2] + 8.0))
+        return out
+
+    def _quiet_phase(self):
+        return self.cfg["fight_policy"] == "disengage_early" and self.nr >= self.cfg["quiet_until_r"]
+
     def _aims_at_me(self, m, tol):
         return abs(wrap(math.atan2(self.xy[1] - m.pos[1], self.xy[0] - m.pos[0]) - m.aim[0])) < tol
 
@@ -298,8 +354,7 @@ class Bot:
         th = loadout_dps(m.weapons, d, wc, m.cubes, self.kinds) + 1e-3
         armor = self.me["stats"].get("armor", 0.0)
         t_me = self.me["hp"] / (th * (1.0 - armor))
-        t_them = m.hp / my
-        return t_me / t_them
+        return t_me * my / max(m.hp, 1e-3)
 
     def _combat(self, enemies):
         me = self.me
@@ -340,6 +395,23 @@ class Bot:
             m = min(self.threats, key=self._threat_rank)
             if t - m.seen < 3.0 and t - m.aggro_t < 4.0:
                 target = m
+        if target is not None and self._quiet_phase() and math.dist(self.xy, (target.pos[0], target.pos[1])) > self.cfg["cornered_d"]:
+            if not (t - target.aggro_t < 4.0 or self._aims_at_me(target, 0.3) or math.dist(self.xy, (target.pos[0], target.pos[1])) < 60):
+                target = None
+            self.fight = False
+        self.break_from = None
+        if self.cfg["targeted_break_los"] and self.obs["alive"] >= self.cfg["break_min_alive"] and self.me["in_zone"]:
+            src = self._targeted_sources(enemies)
+            if src:
+                win = target is not None and self.fight and self._odds(target) >= self.cfg["clear_win_ratio"]
+                if not win:
+                    self.fight = False
+                    self.break_from = src
+                    self.break_until = t + self.cfg["break_hold_s"]
+            elif t < self.break_until and self.last_break:
+                self.break_from = self.last_break
+            if self.break_from:
+                self.last_break = self.break_from
         self.engaged = target
         if target is not None:
             return self._shoot_mech(target, fire)
@@ -557,10 +629,30 @@ class Bot:
         hp_frac = me["hp"] / me["max_hp"]
         e = self.engaged
         cover_from = [((m.pos[0], m.pos[1], m.pos[2] + 7.5)) for m in self.threats if t - m.seen < 3.0]
+        if self.break_from:
+            cover_from = cover_from + list(self.break_from)
+            if len(cover_from) > 6:
+                cover_from = sorted(cover_from, key=lambda q: math.dist(self.xy, q[:2]))[:6]
         if self.zone_urgent:
             self.mode = "rotate"
             goal = self._hold_point()
             boost = (not me["in_zone"] or (self.zone_deadline is not None and self.t + self.zone_need * 0.8 + 4 > self.zone_deadline)) and (me["energy"] > self.cfg["boost_reserve"] or self.nr < 80)
+        elif self.break_from and not self.fight:
+            self.mode = "break"
+            c = self._cover(cover_from, self.cfg["break_cover_r"])
+            if c is not None and self._in_live(c, 4.0):
+                goal = c
+                boost = me["energy"] > 25
+            elif e is not None:
+                mv = self._fight_move(e)
+                mv, j2, b2 = self._unstick(mv)
+                return mv, b2 or me["energy"] > 45, j2
+            else:
+                sx = sum(q[0] for q in self.break_from) / len(self.break_from)
+                sy = sum(q[1] for q in self.break_from) / len(self.break_from)
+                mv = self._strafe((sx, sy), math.dist(self.xy, (sx, sy)), 1e9)
+                mv, j2, b2 = self._unstick(mv)
+                return mv, b2 or me["energy"] > 45, j2
         elif e is not None and not self.fight:
             self.mode = "evade"
             c = self._cover(cover_from, 32.0)
@@ -702,13 +794,21 @@ class Bot:
 
     def _climb(self, goal):
         me = self.me
-        u = _unit(goal[0] - self.xy[0], goal[1] - self.xy[1])
+        t = self.t
+        if self.climb_ref is None or math.dist(self.climb_ref, self.xy) > 4.0:
+            self.climb_ref = self.xy
+            self.climb_t = t
+        elif t - self.climb_t > 2.5:
+            self.climb_k += 1
+            self.climb_t = t
+        base = math.atan2(goal[1] - self.xy[1], goal[0] - self.xy[0])
+        offs = (0.0, 1.0, -1.0, 2.0, -2.0, math.pi)
+        ang = base + offs[self.climb_k % len(offs)]
+        u = (math.cos(ang), math.sin(ang))
         if me["grounded"] and me["energy"] < self.cfg["climb_energy"] and not self.climbing:
             return (0.0, 0.0), False, False
-        self.climbing = not me["grounded"] or me["energy"] >= self.cfg["climb_energy"]
-        if me["grounded"] and me["energy"] < 5:
-            self.climbing = False
-        return u, me["energy"] > 1, me["grounded"]
+        self.climbing = (not me["grounded"] and me["energy"] > 2) or me["energy"] >= self.cfg["climb_energy"]
+        return u, me["energy"] > 2, me["grounded"]
 
     def _unstick(self, mv):
         t = self.t

@@ -320,9 +320,13 @@ class GeoNav:
     def line_clear(self, a, b):
         return bool(self.G.walk(a, b))
 
+    def dist_many(self, a, B):
+        return self.G.dist_many(a, np.asarray(B, float))
+
     def reachable(self, a, b):
         nv = self.G.nav
-        if nv.comp[nv.cell(a[0], a[1])] == 0:
+        c = nv.snap(a, 6.0)
+        if c < 0 or nv.comp.flat[c] == 0:
             return True
         return self.G.path(a, b) is not None
 
@@ -349,12 +353,18 @@ class GeoFollower:
         return self.f.step(pos, goal)
 
 
+_LOCAL = {}
+
+
 def load(map_dir, mode="auto", config=None):
-    local = World(map_dir)
+    key = os.path.abspath(map_dir)
+    if key not in _LOCAL:
+        _LOCAL[key] = World(map_dir)
+    local = _LOCAL[key]
     if mode in ("auto", "geo"):
         try:
             import geo
-            G = geo.load(map_dir=map_dir, config=config)
+            G = geo.shared(map_dir=map_dir, config=config) if hasattr(geo, "shared") else geo.load(map_dir=map_dir, config=config)
             return GeoNav(G, local), GeoFollower(G.follower()), "geo"
         except Exception:
             if mode == "geo":

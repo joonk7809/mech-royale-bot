@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.dirname(HERE))
 from geo.nav import Nav, nav_params
 from geo.world import World, find_map_dir
 
-VERSION = 4
+VERSION = 6
 CACHE_DIR = os.path.join(HERE, "cache")
 INF16 = 65535
 

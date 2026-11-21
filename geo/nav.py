@@ -1,3 +1,4 @@
+import heapq
 import math
 
 import numpy as np
@@ -190,7 +191,7 @@ def floyd(Wm):
 
 
 class Nav:
-    def __init__(self, W, params=None, ds=0.5):
+    def __init__(self, W, params=None, ds=0.5, ledge_margin=0.25):
         p = dict(nav_params())
         p.update(params or {})
         self.p = p
@@ -207,6 +208,8 @@ class Nav:
         self.free = self.free2.ravel()
         self.comp = self.comp2.ravel()
         self.kind = kind.ravel()
+        self.prism_surface = (self.kind > 0) & (self.kind != UNDER)
+        self.ledge_margin = ledge_margin
 
     def cell(self, x, y):
         i = np.clip(((np.asarray(x, dtype=np.float64) - self.x0) / self.nres).astype(np.int64), 0, self.nx - 1)
@@ -237,11 +240,14 @@ class Nav:
         rise[:-1] = s[1:] - s[:-1]
         rise[starts[1:] - 1] = 0.0
         rise[-1] = 0.0
+        ledge = np.zeros(n, dtype=np.float32)
+        pk = self.prism_surface[c]
+        ledge[:-1] = (pk[1:] | pk[:-1]) * np.float32(self.ledge_margin)
         step = self.p["step_up"]
-        fwd = ok & (np.maximum.reduceat(rise, starts) <= step)
+        fwd = ok & (np.maximum.reduceat(rise + ledge, starts) <= step)
         if not both:
             return fwd
-        bwd = ok & (np.maximum.reduceat(-rise, starts) <= step)
+        bwd = ok & (np.maximum.reduceat(ledge - rise, starts) <= step)
         return fwd, bwd
 
     def walk(self, a, b):
@@ -265,7 +271,7 @@ class Nav:
         return int(jj[J[q]] * self.nx + ii[I[q]])
 
     def build_roadmap(self, min_comp=20000, frac_r=3, frac_max=0.35, spacing=8, lattice=40, max_edge=120.0,
-                      probe=4, k_probe=8, rounds=4, log=None):
+                      probe=4, k_probe=8, rounds=4, opt_sources=32, opt_rounds=1, opt_tol=1.03, opt_per_source=3, log=None):
         pts = corner_nodes(self.free2, self.comp2, self.comp_sizes, min_comp, frac_r, frac_max, spacing)
         pts += lattice_nodes(self.free2, self.comp2, self.comp_sizes, min_comp, lattice, pts, lattice // 2)
         cells = np.array([y * self.nx + x for x, y in pts], dtype=np.int64)
@@ -292,7 +298,69 @@ class Nav:
             cells = np.concatenate([cells, np.array(add, dtype=np.int64)])
         else:
             Wm, D = self.graph(cells, max_edge)
+        rng = np.random.default_rng(0)
+        for r in range(opt_rounds):
+            add = self.optimality(cells, D, opt_sources, opt_tol, opt_per_source, rng)
+            if log:
+                log("optimality %d nodes %d added %d" % (r, cells.size, len(add)))
+            if not add:
+                break
+            cells = np.concatenate([cells, np.array(add, dtype=np.int64)])
+            Wm, D = self.graph(cells, max_edge)
         self.set_roadmap(cells, Wm, D)
+
+    def grid_dijkstra(self, start):
+        nx = self.nx
+        free = self.free.tolist()
+        S = self.S.tolist()
+        step = self.p["step_up"]
+        r2 = math.sqrt(2.0)
+        offs = ((1, 1.0), (-1, 1.0), (nx, 1.0), (-nx, 1.0), (nx + 1, r2), (nx - 1, r2), (-nx + 1, r2), (-nx - 1, r2))
+        n = len(free)
+        dist = [math.inf] * n
+        par = [-1] * n
+        dist[start] = 0.0
+        h = [(0.0, start)]
+        pop, push = heapq.heappop, heapq.heappush
+        while h:
+            d, c = pop(h)
+            if d > dist[c]:
+                continue
+            sc = S[c]
+            for o, w in offs:
+                m = c + o
+                if 0 <= m < n and free[m] and S[m] - sc <= step:
+                    nd = d + w
+                    if nd < dist[m]:
+                        dist[m] = nd
+                        par[m] = c
+                        push(h, (nd, m))
+        return np.array(dist), par
+
+    def optimality(self, cells, D, n_src, tol, per_source, rng):
+        comp = self.comp[cells]
+        src = rng.choice(cells.size, size=min(n_src, cells.size), replace=False)
+        add = []
+        have = set(cells.tolist())
+        for u in src:
+            dist, par = self.grid_dijkstra(int(cells[u]))
+            g = dist[cells]
+            same = (comp == comp[u]) & np.isfinite(g) & (g > 0) & np.isfinite(D[u])
+            excess = np.full(g.size, -np.inf)
+            excess[same] = D[u][same] - tol * g[same] - 1.0
+            for t in np.argsort(-excess)[:per_source]:
+                if not excess[t] > 0:
+                    break
+                path = []
+                c = int(cells[t])
+                while c != -1:
+                    path.append(c)
+                    c = par[c]
+                for q in self.turning_points(path):
+                    if q not in have:
+                        have.add(q)
+                        add.append(q)
+        return add
 
     def graph(self, cells, max_edge):
         xy = self.center(cells)
@@ -425,7 +493,7 @@ class Nav:
             cand = cand[np.argpartition(d2[cand], k - 1)[:k]]
         return cand[np.argsort(d2[cand])]
 
-    def attach(self, xy, outbound, k=10, radius=150.0):
+    def attach(self, xy, outbound, k=20, radius=150.0):
         for kk, rr in ((k, radius), (4 * k, 3 * radius)):
             cand = self.near_nodes(xy, kk, rr)
             if cand.size == 0:
@@ -483,6 +551,19 @@ class Nav:
             return None
         pts = np.concatenate([self.node_xy[route], g[None]], axis=0)
         return self.smooth(s, pts)
+
+    def nearest_in_comp(self, xy, comp=0, radius=80.0):
+        k = int(math.ceil(radius / self.nres))
+        i0, j0 = int((xy[0] - self.x0) / self.nres), int((xy[1] - self.y0) / self.nres)
+        ia, ib = max(i0 - k, 0), min(i0 + k + 1, self.nx)
+        ja, jb = max(j0 - k, 0), min(j0 + k + 1, self.ny)
+        J, I = np.nonzero(self.comp2[ja:jb, ia:ib] == comp)
+        if J.size == 0:
+            return None
+        cx = self.x0 + (I + ia + 0.5) * self.nres
+        cy = self.y0 + (J + ja + 0.5) * self.nres
+        q = int(np.argmin((cx - xy[0]) ** 2 + (cy - xy[1]) ** 2))
+        return np.array([cx[q], cy[q]])
 
     def smooth(self, s, pts):
         out = []
