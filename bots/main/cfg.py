@@ -30,6 +30,7 @@ DEFAULT = {
     "zone_frac": 0.55,
     "cover_hold": True,
     "climb_out": True,
+    "grounded": False,
     "climb_energy": 90.0,
     "boost_reserve": 40.0,
     "cover_every": 0.5,
