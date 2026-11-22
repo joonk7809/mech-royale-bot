@@ -18,4 +18,5 @@ docker build --platform linux/amd64 -t bot .
 - `HealAfter` param (default 0): hit-and-heal only applies after this time.
 - `HoldFire` param (default 0): never fire before this time (probe for whether house bystanders only attack once provoked).
 - `FrontKeep` param (default 0): target-score penalty per other visible enemy within 150 m that would be outside our front arc (rear hits deal x1.5) while aiming at that target.
+- `KillHeal` param (default 0): after each kill, if HP is below this fraction, retreat until HP regenerates to `HealHi` (more hunters join as the squad thins).
 - Variant branches `giddy/<name>` set these through `ENV` lines in the `Dockerfile`.
