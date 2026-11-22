@@ -19,4 +19,5 @@ docker build --platform linux/amd64 -t bot .
 - `HoldFire` param (default 0): never fire before this time (probe for whether house bystanders only attack once provoked).
 - `FrontKeep` param (default 0): target-score penalty per other visible enemy within 150 m that would be outside our front arc (rear hits deal x1.5) while aiming at that target.
 - `KillHeal` param (default 0): after each kill, if HP is below this fraction, retreat until HP regenerates to `HealHi` (more hunters join as the squad thins).
+- `ThirdParty` param (default off, Ghost mode only): never initiate. Engage a mech only if it hit us in the last 4 s, or it lost HP in the last 2.5 s (it is already in someone's fight), or 2 or fewer remain.
 - Variant branches `giddy/<name>` set these through `ENV` lines in the `Dockerfile`.

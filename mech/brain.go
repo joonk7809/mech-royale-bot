@@ -16,6 +16,7 @@ type Track struct {
 	LOS     bool
 	Closing float64
 	Engage  bool
+	HurtAt  float64
 }
 
 type known struct {
@@ -167,6 +168,7 @@ type Params struct {
 	HoldFire    float64
 	FrontKeep   float64
 	KillHeal    float64
+	ThirdParty  bool
 }
 
 func DefaultParams() Params {
@@ -263,8 +265,10 @@ func (b *Brain) observe(o *Obs) {
 		}
 		t := tab[m.ID]
 		if t == nil {
-			t = &Track{HitMe: -100}
+			t = &Track{HitMe: -100, HurtAt: -100}
 			tab[m.ID] = t
+		} else if now-t.Seen < 1 && m.HP < t.HP-1 {
+			t.HurtAt = now
 		}
 		t.MechSeen = *m
 		t.Seen = now
@@ -588,6 +592,9 @@ func (b *Brain) step(o *Obs, act *Action) {
 			t.Engage = true
 		case aimed && t.Dist < 190:
 			t.Engage = true
+		}
+		if b.P.ThirdParty && b.P.Ghost {
+			t.Engage = now-t.HitMe < 4 || now-t.HurtAt < 2.5 || o.Alive <= 2
 		}
 		if t.Engage && !t.LOS && t.Dist < maxT && (hidden == nil || t.Dist < hidden.Dist) {
 			hidden = t
