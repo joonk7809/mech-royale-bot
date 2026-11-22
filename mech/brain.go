@@ -160,6 +160,7 @@ type Params struct {
 	NPUntil     float64
 	OpenAvoid   float64
 	SquadUntil  float64
+	HealAfter   float64
 }
 
 func DefaultParams() Params {
@@ -668,7 +669,7 @@ func (b *Brain) step(o *Obs, act *Action) {
 		}
 		b.retreat = now-b.loseAt < 1.5 && b.loseAt > 0
 	}
-	if b.P.HealHi > 0 {
+	if b.P.HealHi > 0 && now > b.P.HealAfter {
 		if !b.healing && hpFrac < b.P.HealLo && (b.retreat || now-b.lastThreatAt > 3) {
 			b.healing = true
 		}
