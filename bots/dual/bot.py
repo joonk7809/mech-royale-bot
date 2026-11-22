@@ -56,6 +56,9 @@ class Bot:
         self.navkind = getattr(self.main, "navkind", None)
         self.use_v1 = False
         self.switches = []
+        self.cap = int(os.environ.get("MECH_CAP_KILLS", "0"))
+        self.idle_t = float(os.environ.get("MECH_IDLE_T", "0"))
+        self.kills = 0
 
     def _call(self, b, obs):
         if b is None:
@@ -67,6 +70,9 @@ class Bot:
             return None
 
     def act(self, obs):
+        self.kills += sum(1 for e in obs.get("events") or [] if e.get("type") == "kill")
+        if (self.cap and self.kills >= self.cap) or (self.idle_t and obs.get("t", 0) >= self.idle_t):
+            return {"tick": obs["tick"]}
         am = self._call(self.main, obs)
         av = self._call(self.v1, obs)
         st = getattr(self.main, "squad", None)

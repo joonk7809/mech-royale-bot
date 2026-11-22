@@ -1,4 +1,6 @@
 import math
+
+import numpy as np
 import random
 import sys
 import traceback
@@ -53,6 +55,7 @@ class Bot:
         self._warm()
         self.cover_cache = None
         self.lock = None
+        self.solo_cache = None
         self.jump_t = 0.0
         self.short_until = -1.0
         self.last_ok = {}
@@ -761,7 +764,50 @@ class Bot:
         self.cover_cache = (self.t, radius, self.xy, list(threats), c)
         return c
 
+    def _solo_spot(self, e):
+        G = getattr(self.W, "G", None)
+        if G is None:
+            return None
+        t = self.t
+        others = [m for m in self.enemies if m is not e and t - m.seen < self.cfg["solo_mem"]]
+        if not others:
+            return None
+        ck = self.solo_cache
+        if ck is not None and t - ck[0] < self.cfg["solo_every"] and ck[1] == e.id and len(ck[2]) == len(others):
+            return ck[3]
+        from geo.query import lattice_around, visible_from
+        nav = G.nav
+        cells = lattice_around(nav, self.xy, self.cfg["solo_r"], self.cfg["solo_step"])
+        if cells.size == 0:
+            return None
+        xy = nav.center(cells)
+        dm = np.hypot(xy[:, 0] - self.xy[0], xy[:, 1] - self.xy[1])
+        keep = np.argsort(dm)[:72]
+        cells, xy, dm = cells[keep], xy[keep], dm[keep]
+        z = nav.S[cells]
+        P = np.c_[xy, z]
+        others = sorted(others, key=lambda m: math.dist(self.xy, (m.pos[0], m.pos[1])))[:5]
+        E = np.array([(m.pos[0], m.pos[1], m.pos[2] + 8.0) for m in others], float)
+        seen = visible_from(G.world, E, P)
+        tc = np.array([[e.pos[0], e.pos[1], e.pos[2] + 4.5]] * len(P), float)
+        eye = P + np.array([0.0, 0.0, 8.0])
+        ok = np.asarray(G.world.shot_clear_many(eye, tc), bool)
+        dt = np.hypot(xy[:, 0] - e.pos[0], xy[:, 1] - e.pos[1])
+        zc, zr = self._circle_at(self.t + 2.0)
+        live = np.hypot(xy[:, 0] - zc[0], xy[:, 1] - zc[1]) < zr - 4.0
+        score = 10.0 * seen + np.where(ok, 0.0, 6.0) + dm / 12.0 + np.where(dt < 20.0, 3.0, 0.0) + np.where(live, 0.0, 50.0)
+        k = int(np.argmin(score))
+        here = visible_from(G.world, E, np.array([[self.xy[0], self.xy[1], self.pos[2]]]))[0]
+        res = (float(xy[k][0]), float(xy[k][1])) if score[k] + 2.0 < 10.0 * here else None
+        self.solo_cache = (t, e.id, [m.id for m in others], res)
+        return res
+
     def _fight_move(self, e):
+        if self.cfg["solo"]:
+            sp = self._solo_spot(e)
+            if sp is not None and math.dist(sp, self.xy) > 2.0:
+                self.mode = "solo"
+                return self._nav_to(sp)
         d = math.dist(self.xy, (e.pos[0], e.pos[1]))
         return self._strafe(e.pos, d, want_range(self.kinds, e.weapons, self.C["weapons"]) * self.cfg["fight_range_scale"])
 
