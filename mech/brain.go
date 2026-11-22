@@ -152,12 +152,13 @@ type Params struct {
 	SpeedUp     bool
 	Backstab    float64
 	LethalK     float64
+	PracT       float64
 }
 
 func DefaultParams() Params {
 	p := Params{RetreatHP: 0.38, RecoverHP: 0.8, GunRange: 85, LightRange: 28, LaserRange: 85, EngageDist: 60, FarmNPC: true, Explore: false,
 		Ghost: true, HomeExpo: 120, LootRadius: 90, CrateUntil: 150, UseDrops: false, Dodge: true, NoMortar: true,
-		Peek: true, LaserFirst: false, CrowdHide: true, Practice: true}
+		Peek: true, LaserFirst: false, CrowdHide: true, Practice: true, PracT: 20}
 
 	p.LaserFirst = true
 
@@ -170,7 +171,7 @@ func NewBrain(h *Hello, w *World) *Brain {
 		seed = int64(h.Slot) + 1
 	}
 	return &Brain{
-		W: w, Cfg: h.Config, Slot: h.Slot, rng: rand.New(rand.NewSource(seed)), P: DefaultParams(),
+		W: w, Cfg: h.Config, Slot: h.Slot, rng: rand.New(rand.NewSource(seed)), P: applyEnv(DefaultParams(), "MECH_P"),
 		tracks: map[int]*Track{}, npcs: map[int]*Track{}, crates: map[int]*known{}, cubes: map[int]*known{},
 		pickups: map[int]*known{}, bad: map[int]float64{}, strafe: 1, lootID: -1, lastHurt: -100, lastThreatAt: -100,
 		holdStart: -1,
@@ -332,11 +333,11 @@ func (b *Brain) observe(o *Obs) {
 	if b.otherDead >= 5 {
 		b.notPractice = true
 	}
-	if on := b.base.Practice && !b.notPractice && now > 20; on != b.pracOn {
+	if on := b.base.Practice && !b.notPractice && now > b.base.PracT; on != b.pracOn {
 		b.pracOn = on
 		b.P = b.base
 		if on {
-			b.P = squadParams(b.base)
+			b.P = applyEnv(squadParams(b.base), "MECH_SQUAD_P")
 		}
 	}
 	if open := b.base.Opening && !b.notPractice && !b.pracOn && b.startAlive-o.Alive-b.kills <= 0; open != b.openOn {
@@ -345,7 +346,7 @@ func (b *Brain) observe(o *Obs) {
 		if open {
 			b.P.LaserFirst, b.P.LaserSeek, b.P.LootRadius = true, 240, 150
 		} else if b.pracOn {
-			b.P = squadParams(b.base)
+			b.P = applyEnv(squadParams(b.base), "MECH_SQUAD_P")
 		}
 	}
 
