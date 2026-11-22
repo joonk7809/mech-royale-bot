@@ -53,6 +53,8 @@ class Bot:
         self._warm()
         self.cover_cache = None
         self.lock = None
+        self.snipe_ban = {}
+        self.sniping = False
         self.jump_t = 0.0
         self.short_until = -1.0
         self.last_ok = {}
@@ -338,6 +340,18 @@ class Bot:
                 m, d = min(near, key=lambda q: q[0].hp + 2.0 * q[1])
                 target = m
                 self.fight = me["hp"] > self.cfg["press_min_hp"] * me["max_hp"] or d < 25
+                vis = []
+        self.sniping = False
+        if target is None and self.cfg["snipe"] and vis and not self.zone_urgent and me["hp"] > self.cfg["snipe_min_hp"] * me["max_hp"] and all(t - m.aggro_t >= self.cfg["snipe_quiet_s"] for m in enemies):
+            for m in vis:
+                if math.dist(self.xy, (m.pos[0], m.pos[1])) < self.cfg["snipe_min_d"]:
+                    self.snipe_ban[m.id] = t + self.cfg["snipe_ban_s"]
+            far = [(m, math.dist(self.xy, (m.pos[0], m.pos[1]))) for m in vis]
+            far = [(m, d) for m, d in far if self.cfg["snipe_min_d"] <= d <= self.cfg["snipe_max_d"] and self.snipe_ban.get(m.id, -1.0) < t]
+            if far:
+                target = min(far, key=lambda q: q[0].hp + q[1])[0]
+                self.fight = True
+                self.sniping = True
                 vis = []
         if vis:
             cand = sorted(vis, key=self._threat_rank)
@@ -637,6 +651,9 @@ class Bot:
                 if not self._in_live(goal):
                     goal = hp_
             boost = me["energy"] > 30
+        elif e is not None and self.sniping:
+            self.mode = "snipe"
+            goal = None
         elif e is not None:
             self.mode = "fight"
             goal = None
