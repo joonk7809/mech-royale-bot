@@ -13,4 +13,5 @@ docker build --platform linux/amd64 -t bot .
 - `HealLo` / `HealHi` params (off by default): hit-and-heal. Once HP falls below `HealLo` while losing or out of contact, keep retreating until HP regenerates to `HealHi` (the squad LoseRule otherwise retreats for only 1.5 s).
 - `LateHide` param (off by default): after this time, take cover whenever exposed unless finishing a target.
 - `NPUntil` param (off by default): only leave practice-squad mode on unexplained deaths before this time. Late zone or drone deaths of house bots otherwise switch the bot back to FFA params mid-practice.
+- `OpenAvoid` param (off by default): before this time, when 2+ enemies are seen within 120 m, take cover or move away instead of fighting (unless finishing).
 - Variant branches `giddy/<name>` set these through `ENV` lines in the `Dockerfile`.

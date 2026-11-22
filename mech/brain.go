@@ -158,6 +158,7 @@ type Params struct {
 	HealHi      float64
 	LateHide    float64
 	NPUntil     float64
+	OpenAvoid   float64
 }
 
 func DefaultParams() Params {
@@ -739,6 +740,9 @@ func (b *Brain) step(o *Obs, act *Action) {
 	case target == nil && now-b.lastHurt < 2.5 && !late && b.P.Ghost && b.hideFromBearing(o, seen, &mx, &my):
 		boost = me.Energy > 30 && (mx != 0 || my != 0)
 		mode = "cover"
+	case b.P.OpenAvoid > 0 && now < b.P.OpenAvoid && !finishing && b.openAvoid(o, seen, &mx, &my):
+		boost = me.Energy > 30 && (mx != 0 || my != 0)
+		mode = "openavoid"
 	case now < b.P.EarlyHide && exposed && !finishing && b.coverMove(o, seen, &mx, &my):
 		boost = me.Energy > 20 && (mx != 0 || my != 0)
 		mode = "earlyhide"
@@ -2018,4 +2022,32 @@ func (b *Brain) showsBack(t *Track, x, y float64) bool {
 		arc = 180
 	}
 	return math.Abs(angDiff(t.Aim[0], math.Atan2(y-t.Pos[1], x-t.Pos[0]))) > arc*math.Pi/360+0.1
+}
+
+func (b *Brain) openAvoid(o *Obs, seen []*Track, mx, my *float64) bool {
+	me := &o.Self
+	x, y := me.Pos[0], me.Pos[1]
+	var rx, ry float64
+	n := 0
+	for _, t := range seen {
+		if t.Seen != b.now || t.Dist > 120 {
+			continue
+		}
+		n++
+		d := math.Max(t.Dist, 5)
+		rx += (x - t.Pos[0]) / (d * d)
+		ry += (y - t.Pos[1]) / (d * d)
+	}
+	if n < 2 {
+		return false
+	}
+	if b.coverMove(o, seen, mx, my) {
+		return true
+	}
+	r := hyp(rx, ry)
+	if r == 0 {
+		return false
+	}
+	*mx, *my = b.travel(me, x+rx/r*40, y+ry/r*40)
+	return true
 }
