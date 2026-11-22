@@ -665,7 +665,16 @@ class Bot:
         else:
             dg = self._drop_goal()
             lg = self._loot_goal()
-            if dg is not None and (lg is None or dg[0] < 120 or hp_frac < 0.8):
+            sk = None
+            if self.cfg["seek"] and t >= self.cfg["seek_after"] and hp_frac > self.cfg["seek_min_hp"] and len(self.kinds) >= 1:
+                known = [(m, math.dist(self.xy, (m.pos[0], m.pos[1]))) for m in self.track.enemies(t, self.cfg["seek_mem"])]
+                known = [(m, d) for m, d in known if d < self.cfg["seek_max_d"] and self._in_live((m.pos[0], m.pos[1]), 4.0)]
+                if known:
+                    sk = min(known, key=lambda q: q[1] + 0.5 * q[0].hp)[0]
+            if sk is not None:
+                self.mode = "seek"
+                goal = (sk.pos[0], sk.pos[1])
+            elif dg is not None and (lg is None or dg[0] < 120 or hp_frac < 0.8):
                 self.mode = "drop"
                 goal = dg[1]
                 boost = dg[2]["lands_in"] < dg[0] / me["stats"]["walk_speed"] and me["energy"] > 40
