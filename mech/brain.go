@@ -156,6 +156,7 @@ type Params struct {
 	PracT       float64
 	HealLo      float64
 	HealHi      float64
+	LateHide    float64
 }
 
 func DefaultParams() Params {
@@ -740,6 +741,9 @@ func (b *Brain) step(o *Obs, act *Action) {
 	case now < b.P.EarlyHide && exposed && !finishing && b.coverMove(o, seen, &mx, &my):
 		boost = me.Energy > 20 && (mx != 0 || my != 0)
 		mode = "earlyhide"
+	case b.P.LateHide > 0 && now > b.P.LateHide && exposed && !finishing && b.coverMove(o, seen, &mx, &my):
+		boost = me.Energy > 20 && (mx != 0 || my != 0)
+		mode = "latehide"
 	case foe == nil && shy != nil && !late && b.coverMove(o, seen, &mx, &my):
 		boost = me.Energy > 40 && (mx != 0 || my != 0)
 		mode = "shy"
