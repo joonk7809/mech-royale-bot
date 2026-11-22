@@ -59,6 +59,7 @@ class Bot:
         self.cap = int(os.environ.get("MECH_CAP_KILLS", "0"))
         self.idle_t = float(os.environ.get("MECH_IDLE_T", "0"))
         self.kills = 0
+        self.assume_t = float(os.environ.get("MECH_DUAL_ASSUME", "0"))
         self.farm = self.open == "farm" and self.v1 is not None and "farm" in getattr(self.v1, "cfg", {})
         self.farm_until = float(os.environ.get("MECH_FARM_UNTIL", "40"))
         self.farm_r = float(os.environ.get("MECH_FARM_CONTACT", "90"))
@@ -105,7 +106,7 @@ class Bot:
         if self.farm_on and av is not None:
             return av
         st = getattr(self.main, "squad", None)
-        sq = st is True or (st is None and self.open == "v1")
+        sq = st is True or (st is None and (self.open == "v1" or (self.assume_t > 0 and obs.get("t", 0) >= self.assume_t)))
         if sq != self.use_v1:
             self.use_v1 = sq
             self.switches.append((obs.get("t"), sq))

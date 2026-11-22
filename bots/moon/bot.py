@@ -56,6 +56,7 @@ class Bot:
         self.cover_cache = None
         self.lock = None
         self.solo_cache = None
+        self.lose_t = -1e9
         self.jump_t = 0.0
         self.short_until = -1.0
         self.last_ok = {}
@@ -378,6 +379,8 @@ class Bot:
             m = min(self.threats, key=self._threat_rank)
             if t - m.seen < 3.0 and t - m.aggro_t < 4.0:
                 target = m
+        if self.cfg["lose_rule"]:
+            self._lose_rule(target, enemies)
         self.engaged = target
         self.lock = target.id if target is not None else None
         if target is not None:
@@ -386,6 +389,40 @@ class Bot:
         if nt is not None:
             return self._shoot_static(nt, fire)
         return None, 0.0, fire
+
+    def _burst(self, m):
+        me = self.me
+        mult = 1.0 + self.C["cubes"]["damage_per_cube"] * min(me["cubes"], self.C["cubes"]["stat_cap"])
+        b = 0.0
+        for w in me["weapons"]:
+            if not w:
+                continue
+            st = w["stats"]
+            d = math.dist(self.xy, (m.pos[0], m.pos[1]))
+            if w["kind"] == "gun" and st["cooldown"] > 0:
+                b += 1.5 * 0.5 * st["damage"] / st["cooldown"]
+            elif w["kind"] == "laser" and w["cooldown"] < 1.0 and d < st["range"]:
+                b += 0.8 * st["damage"]
+        return b * mult
+
+    def _lose_rule(self, target, enemies):
+        me = self.me
+        t = self.t
+        hpf = me["hp"] / me["max_hp"]
+        near = sum(1 for m in enemies if t - m.seen < 0.15 and math.dist(self.xy, (m.pos[0], m.pos[1])) < 160)
+        losing = (near >= 2 and hpf < 0.55) or (near >= 3 and hpf < 0.8)
+        if target is not None:
+            tf = target.hp / max(1.0, target.max_hp)
+            if hpf < 0.35 and tf > hpf + 0.1:
+                losing = True
+            if tf < 0.25 and hpf > 0.2 and near <= 2:
+                losing = False
+            if near <= 2 and math.dist(self.xy, (target.pos[0], target.pos[1])) < 120 and target.hp < max(200.0, self._burst(target)):
+                losing = False
+        if losing:
+            self.lose_t = t
+        if t - self.lose_t < self.cfg["lose_hold"]:
+            self.fight = False
 
     def _near_passive(self, p, r):
         return any(self.t - m.aggro_t >= 4.0 and math.dist((m.pos[0], m.pos[1]), (p[0], p[1])) < r for m in self.enemies)
@@ -551,6 +588,11 @@ class Bot:
                         chosen = chosen or (yw, pt)
                         continue
                     ready = ch >= full * self.cfg["laser_min_frac"]
+                    if self.cfg["lethal"] and not ready and ch >= st.get("min_charge", self.C["weapons"]["laser"]["min_charge"]):
+                        dmg = st["damage"] * (st.get("min_frac", 0.35) + (1.0 - st.get("min_frac", 0.35)) * ch / full) * (1.0 + self.C["cubes"]["damage_per_cube"] * min(me["cubes"], self.C["cubes"]["stat_cap"]))
+                        if "mortar" in m.weapons:
+                            dmg *= 1.0 + st.get("cookoff", 0.6)
+                        ready = dmg * 0.8 >= m.hp
                     tol = self.cfg["laser_fire_tol"]
                     if not self.cfg["laser_release_on_align"]:
                         fire[s] = not ready
