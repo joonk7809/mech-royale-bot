@@ -9,4 +9,4 @@ FROM scratch
 COPY --from=build /mechbot /mechbot
 ENTRYPOINT ["/mechbot"]
 ENV MECH_P=NPUntil=60,OpenAvoid=12,AvoidN=1,AvoidR=170
-ENV MECH_SQUAD_P=LateHide=330,Ghost=true,Peek=true
+ENV MECH_SQUAD_P=LateHide=300,Ghost=true,Peek=true,FrontKeep=80
