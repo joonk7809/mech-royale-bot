@@ -802,7 +802,28 @@ class Bot:
         self.solo_cache = (t, e.id, [m.id for m in others], res)
         return res
 
+    def _hug_move(self, e):
+        t = self.t
+        ex, ey = e.pos[0], e.pos[1]
+        others = [m for m in self.enemies if m is not e and t - m.seen < 3.0]
+        if others:
+            cx = sum(m.pos[0] for m in others) / len(others)
+            cy = sum(m.pos[1] for m in others) / len(others)
+            u = _unit(ex - cx, ey - cy)
+        else:
+            u = _unit(self.xy[0] - ex, self.xy[1] - ey)
+        if u == (0.0, 0.0):
+            u = _unit(self.xy[0] - ex, self.xy[1] - ey)
+        g = (ex + u[0] * self.cfg["hug_d"], ey + u[1] * self.cfg["hug_d"])
+        d = math.dist(self.xy, g)
+        mv = self._nav_to(g)
+        k = min(1.0, d / 3.0)
+        return (mv[0] * k, mv[1] * k)
+
     def _fight_move(self, e):
+        if self.cfg["hug"] and self.me["hp"] > self.cfg["hug_min_hp"] * self.me["max_hp"]:
+            self.mode = "hug"
+            return self._hug_move(e)
         if self.cfg["solo"]:
             sp = self._solo_spot(e)
             if sp is not None and math.dist(sp, self.xy) > 2.0:
