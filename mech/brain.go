@@ -164,6 +164,7 @@ type Params struct {
 	AvoidN      float64
 	AvoidR      float64
 	HoldFire    float64
+	FrontKeep   float64
 }
 
 func DefaultParams() Params {
@@ -593,6 +594,14 @@ func (b *Brain) step(o *Obs, act *Action) {
 			continue
 		}
 		s := t.Dist + hpw*t.HP
+		if b.P.FrontKeep > 0 {
+			bt := math.Atan2(t.Pos[1]-y, t.Pos[0]-x)
+			for _, u := range b.tracks {
+				if u != t && u.Seen == now && u.LOS && u.Dist < 150 && math.Abs(angDiff(math.Atan2(u.Pos[1]-y, u.Pos[0]-x), bt)) > math.Pi/2 {
+					s += b.P.FrontKeep
+				}
+			}
+		}
 		if b.P.LowBonus > 0 && t.HP <= 0.3*t.MaxHP {
 			s -= b.P.LowBonus
 		}

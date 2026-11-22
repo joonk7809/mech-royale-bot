@@ -17,4 +17,5 @@ docker build --platform linux/amd64 -t bot .
 - `SquadUntil` param (off by default): use the practice-squad params only until this time, then the base (stealthier) params.
 - `HealAfter` param (default 0): hit-and-heal only applies after this time.
 - `HoldFire` param (default 0): never fire before this time (probe for whether house bystanders only attack once provoked).
+- `FrontKeep` param (default 0): target-score penalty per other visible enemy within 150 m that would be outside our front arc (rear hits deal x1.5) while aiming at that target.
 - Variant branches `giddy/<name>` set these through `ENV` lines in the `Dockerfile`.
