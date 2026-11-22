@@ -159,6 +159,7 @@ type Params struct {
 	LateHide    float64
 	NPUntil     float64
 	OpenAvoid   float64
+	SquadUntil  float64
 }
 
 func DefaultParams() Params {
@@ -339,7 +340,7 @@ func (b *Brain) observe(o *Obs) {
 	if b.otherDead >= 5 && (b.base.NPUntil <= 0 || now < b.base.NPUntil) {
 		b.notPractice = true
 	}
-	if on := b.base.Practice && !b.notPractice && now > b.base.PracT; on != b.pracOn {
+	if on := b.base.Practice && !b.notPractice && now > b.base.PracT && (b.base.SquadUntil <= 0 || now < b.base.SquadUntil); on != b.pracOn {
 		b.pracOn = on
 		b.P = b.base
 		if on {

@@ -14,4 +14,5 @@ docker build --platform linux/amd64 -t bot .
 - `LateHide` param (off by default): after this time, take cover whenever exposed unless finishing a target.
 - `NPUntil` param (off by default): only leave practice-squad mode on unexplained deaths before this time. Late zone or drone deaths of house bots otherwise switch the bot back to FFA params mid-practice.
 - `OpenAvoid` param (off by default): before this time, when 2+ enemies are seen within 120 m, take cover or move away instead of fighting (unless finishing).
+- `SquadUntil` param (off by default): use the practice-squad params only until this time, then the base (stealthier) params.
 - Variant branches `giddy/<name>` set these through `ENV` lines in the `Dockerfile`.
