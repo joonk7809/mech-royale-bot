@@ -161,6 +161,8 @@ type Params struct {
 	OpenAvoid   float64
 	SquadUntil  float64
 	HealAfter   float64
+	AvoidN      float64
+	AvoidR      float64
 }
 
 func DefaultParams() Params {
@@ -2031,8 +2033,15 @@ func (b *Brain) openAvoid(o *Obs, seen []*Track, mx, my *float64) bool {
 	x, y := me.Pos[0], me.Pos[1]
 	var rx, ry float64
 	n := 0
+	avR, avN := 120.0, 2
+	if b.P.AvoidR > 0 {
+		avR = b.P.AvoidR
+	}
+	if b.P.AvoidN > 0 {
+		avN = int(b.P.AvoidN)
+	}
 	for _, t := range seen {
-		if t.Seen != b.now || t.Dist > 120 {
+		if t.Seen != b.now || t.Dist > avR {
 			continue
 		}
 		n++
@@ -2040,7 +2049,7 @@ func (b *Brain) openAvoid(o *Obs, seen []*Track, mx, my *float64) bool {
 		rx += (x - t.Pos[0]) / (d * d)
 		ry += (y - t.Pos[1]) / (d * d)
 	}
-	if n < 2 {
+	if n < avN {
 		return false
 	}
 	if b.coverMove(o, seen, mx, my) {
