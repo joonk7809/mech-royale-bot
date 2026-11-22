@@ -96,6 +96,7 @@ type Brain struct {
 	otherDead          int
 	stickID            int
 	stickAt, loseAt    float64
+	healing            bool
 }
 
 type Params struct {
@@ -153,6 +154,8 @@ type Params struct {
 	Backstab    float64
 	LethalK     float64
 	PracT       float64
+	HealLo      float64
+	HealHi      float64
 }
 
 func DefaultParams() Params {
@@ -660,6 +663,17 @@ func (b *Brain) step(o *Obs, act *Action) {
 			b.loseAt = now
 		}
 		b.retreat = now-b.loseAt < 1.5 && b.loseAt > 0
+	}
+	if b.P.HealHi > 0 {
+		if !b.healing && hpFrac < b.P.HealLo && (b.retreat || now-b.lastThreatAt > 3) {
+			b.healing = true
+		}
+		if b.healing && hpFrac >= b.P.HealHi {
+			b.healing = false
+		}
+		if b.healing {
+			b.retreat = true
+		}
 	}
 
 	exposed := false
