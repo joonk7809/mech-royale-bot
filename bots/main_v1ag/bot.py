@@ -555,8 +555,23 @@ class Bot:
             mv = _unit(goal[0] - self.xy[0], goal[1] - self.xy[1])
         return _unit(mv[0], mv[1])
 
+    def _harvest_cube(self):
+        me = self.me
+        if not self.cfg["harvest"] or me["cubes"] >= self.cfg["harvest_cap"] or me["hp"] <= self.cfg["harvest_min_hp"] * me["max_hp"]:
+            return None
+        best = None
+        for i, (key, p, k, ts, hp) in self.track.items.items():
+            if key != "cubes":
+                continue
+            d = math.dist(self.xy, (p[0], p[1]))
+            if d < self.cfg["harvest_r"] and p[2] - self.pos[2] < 3 and (best is None or d < best[0]):
+                best = (d, (p[0], p[1], p[2]))
+        return best[1] if best else None
+
     def _loot_goal(self):
-        if not self.cfg["loot"] or self.t > self.cfg["loot_until"]:
+        hv = self.cfg["harvest"] and self.me["cubes"] < self.cfg["harvest_cap"]
+        late = self.t > self.cfg["loot_until"]
+        if not self.cfg["loot"] or (late and not hv):
             return None
         best = None
         hp_ok = self.me["hp"] > 0.35 * self.me["max_hp"]
@@ -566,6 +581,13 @@ class Bot:
                 continue
             dz = p[2] - self.pos[2]
             if dz > 40:
+                continue
+            if late and key != "cubes":
+                continue
+            if hv and key == "cubes":
+                s = 200.0 / (d + 25.0)
+                if best is None or s > best[0]:
+                    best = (s, (p[0], p[1], p[2]), key)
                 continue
             if key == "pickups":
                 if not self._wants_pickup(k):
@@ -634,6 +656,10 @@ class Bot:
             self.mode = "rotate"
             goal = self._hold_point()
             boost = (not me["in_zone"] or (self.zone_deadline is not None and self.t + self.zone_need * 0.8 + 4 > self.zone_deadline)) and (me["energy"] > self.cfg["boost_reserve"] or self.nr < 80)
+        elif (hc := self._harvest_cube()) is not None:
+            self.mode = "harvest"
+            goal = hc
+            boost = me["energy"] > 20
         elif e is not None and not self.fight:
             self.mode = "evade"
             c = self._cover(cover_from, 32.0)
