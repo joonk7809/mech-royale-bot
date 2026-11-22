@@ -60,6 +60,12 @@ class Bot:
         self.short_until = -1.0
         self.last_ok = {}
         self.spot = None
+        self.farm_goal = None
+        self.farm_id = None
+        self.farm_due = 0.0
+        self.farm_skip = set()
+        self.roam = None
+        self.roam_t = -1e9
 
     def _warm(self):
         try:
@@ -239,6 +245,8 @@ class Bot:
         bv = 1e9
         for i, ch in enumerate(offer["choices"]):
             v = self.rank.get(ch["id"], 500 + i)
+            if self.cfg["farm"] and ch["id"] in self.cfg["farm_first"]:
+                v = self.cfg["farm_first"].index(ch["id"]) - 10
             if v < bv:
                 bv, best = v, i
         return best
@@ -327,6 +335,9 @@ class Bot:
             close = d < 130 or (d < 290 and "laser" in m.weapons)
             if aggro or close:
                 self.threats.append(m)
+        if self.cfg["farm"]:
+            vis = [m for m in vis if t - m.aggro_t < 4.0]
+            self.threats = [m for m in self.threats if t - m.aggro_t < 4.0]
         target = None
         if self.cfg["finish_low"] and self.lock is not None and me["hp"] > self.cfg["finish_min_hp"] * me["max_hp"]:
             m = next((m for m in enemies if m.id == self.lock and t - m.seen < 1.5), None)
@@ -399,6 +410,8 @@ class Bot:
             return None
         if self.threats:
             return None
+        if self.cfg["farm"]:
+            return self._farm_pick()
         best = None
         if self.cfg["npc_hunt"] and self.me["hp"] > 0.6 * self.me["max_hp"]:
             for i, (p, v, hp, ts) in self.track.npcs.items():
@@ -425,6 +438,63 @@ class Bot:
                 if best is None or s < best[0]:
                     best = (s, ("crate", i, p, (0.0, 0.0, 0.0)))
         return best[1] if best else None
+
+    def _farm_pick(self):
+        me = self.me
+        sp = me["stats"]["walk_speed"]
+        R = self.cfg["farm_r"]
+        free = None in self.wk
+        cands = []
+        if me["hp"] > 0.5 * me["max_hp"]:
+            for i, (p, v, hp, ts) in self.track.npcs.items():
+                if self.t - ts <= 5.0:
+                    cands.append((i, p, 2.0, hp / 100.0 + 1.0, ("npc", i, p, v) if self.t - ts < 0.15 else None))
+        for i, (key, p, k, ts, hp) in self.track.items.items():
+            if key == "crates":
+                cands.append((i, p, 1.5 if free else 1.0, (hp or 300.0) / 100.0 + 1.0, ("crate", i, p, (0.0, 0.0, 0.0)) if self.t - ts < 0.15 else None))
+            elif key == "cubes":
+                cands.append((i, p, 1.0, 0.3, None))
+            elif self._wants_pickup(k):
+                cands.append((i, p, 0.45 * min(self._pref(k), 2.0) if free else 0.2, 0.3, None))
+        best = shoot = None
+        for i, p, val, work, tgt in cands:
+            d = math.dist(self.xy, (p[0], p[1]))
+            dz = p[2] - self.pos[2]
+            if d > R or dz > 15 or i in self.farm_skip or not self._in_safe((p[0], p[1]), 15):
+                continue
+            s = val / (d / sp + work) * (0.5 if dz > 3 else 1.0) * (1.3 if i == self.farm_id else 1.0)
+            if best is None or s > best[0]:
+                best = (s, i, p, tgt)
+            if tgt is not None and (shoot is None or s > shoot[0]):
+                shoot = (s, tgt)
+        if best is not None and best[1] != self.farm_id:
+            self.farm_due = self.t + 1.5 * math.dist(self.xy, (best[2][0], best[2][1])) / sp + 8.0
+        elif best is not None and self.t > self.farm_due:
+            self.farm_skip.add(best[1])
+        self.farm_goal = best
+        self.farm_id = best[1] if best else None
+        if best is not None and best[3] is not None:
+            return best[3]
+        return shoot[1] if shoot else None
+
+    def _farm_move(self):
+        me = self.me
+        g = self.farm_goal
+        if g is None:
+            if self.t - self.roam_t > 8.0 or math.dist(self.xy, self.roam) < 10.0:
+                self.roam_t = self.t
+                a = self.rng.uniform(0, 2 * math.pi)
+                r = self.nr * 0.6 * math.sqrt(self.rng.random())
+                self.roam = (self.nc[0] + r * math.cos(a), self.nc[1] + r * math.sin(a))
+            return self.roam, me["energy"] > 60
+        p = g[2]
+        d = math.dist(self.xy, (p[0], p[1]))
+        if g[3] is not None and d < 12.0:
+            u = _unit(self.xy[0] - p[0], self.xy[1] - p[1])
+            return (self.xy[0] + u[0] * 10.0, self.xy[1] + u[1] * 10.0), False
+        if g[3] is not None and d < 22.0:
+            return None, False
+        return (p[0], p[1], p[2]), d > 30 and me["energy"] > 45
 
     def _gun_slot(self):
         return self.wk.index("gun") if "gun" in self.wk else None
@@ -651,6 +721,11 @@ class Bot:
             c = self._cover(cover_from, 30.0)
             goal = c if c is not None else self.xy
             speed = self.cfg["silent_frac"] if self.cfg["silent"] else 1.0
+        elif self.cfg["farm"]:
+            self.mode = "farm"
+            goal, boost = self._farm_move()
+            if goal is None:
+                speed = 0.0
         else:
             dg = self._drop_goal()
             lg = self._loot_goal()

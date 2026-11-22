@@ -59,6 +59,31 @@ class Bot:
         self.cap = int(os.environ.get("MECH_CAP_KILLS", "0"))
         self.idle_t = float(os.environ.get("MECH_IDLE_T", "0"))
         self.kills = 0
+        self.farm = self.open == "farm" and self.v1 is not None and "farm" in getattr(self.v1, "cfg", {})
+        self.farm_until = float(os.environ.get("MECH_FARM_UNTIL", "40"))
+        self.farm_r = float(os.environ.get("MECH_FARM_CONTACT", "90"))
+        self.farm_wait = float(os.environ.get("MECH_FARM_WAIT", "4"))
+        self.farm_on = False
+        self.contact_t = -1e9
+        if self.farm:
+            self.v1_cfg = dict(self.v1.cfg)
+            self.farm_cfg = dict(self.v1_cfg, farm=True, squad_press=False, finish_low=False, squad_avoid=False)
+
+    def _farming(self, obs):
+        t = obs.get("t", 0)
+        if t >= self.farm_until or getattr(self.main, "squad", None) is True:
+            self.farm = False
+            return False
+        x, y = obs["self"]["pos"][:2]
+        if any(e.get("type") == "damaged" and e.get("by") is not None and e["by"] < 16 for e in obs.get("events") or []) or any(m.get("kind") == "mech" and (m["pos"][0] - x) ** 2 + (m["pos"][1] - y) ** 2 < self.farm_r ** 2 for m in obs.get("mechs") or []):
+            self.contact_t = t
+        return t - self.contact_t >= self.farm_wait
+
+    def _set_farm(self, on):
+        if on != self.farm_on:
+            self.farm_on = on
+            self.v1.cfg.clear()
+            self.v1.cfg.update(self.farm_cfg if on else self.v1_cfg)
 
     def _call(self, b, obs):
         if b is None:
@@ -74,7 +99,11 @@ class Bot:
         if (self.cap and self.kills >= self.cap) or (self.idle_t and obs.get("t", 0) >= self.idle_t):
             return {"tick": obs["tick"]}
         am = self._call(self.main, obs)
+        if self.farm or self.farm_on:
+            self._set_farm(self.farm and self._farming(obs))
         av = self._call(self.v1, obs)
+        if self.farm_on and av is not None:
+            return av
         st = getattr(self.main, "squad", None)
         sq = st is True or (st is None and self.open == "v1")
         if sq != self.use_v1:
