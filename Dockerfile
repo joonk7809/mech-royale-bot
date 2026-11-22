@@ -8,4 +8,5 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o
 FROM scratch
 COPY --from=build /mechbot /mechbot
 ENTRYPOINT ["/mechbot"]
-ENV MECH_P=OpenAvoid=18,AvoidN=1,AvoidR=220
+ENV MECH_P=NPUntil=60,OpenAvoid=18,AvoidN=1,AvoidR=220
+ENV MECH_SQUAD_P=LateHide=300,Ghost=true,Peek=true
