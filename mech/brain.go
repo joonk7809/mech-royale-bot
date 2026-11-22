@@ -157,6 +157,7 @@ type Params struct {
 	HealLo      float64
 	HealHi      float64
 	LateHide    float64
+	NPUntil     float64
 }
 
 func DefaultParams() Params {
@@ -334,7 +335,7 @@ func (b *Brain) observe(o *Obs) {
 	} else {
 		b.otherDead = 0
 	}
-	if b.otherDead >= 5 {
+	if b.otherDead >= 5 && (b.base.NPUntil <= 0 || now < b.base.NPUntil) {
 		b.notPractice = true
 	}
 	if on := b.base.Practice && !b.notPractice && now > b.base.PracT; on != b.pracOn {
