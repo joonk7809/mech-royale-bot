@@ -16,4 +16,5 @@ docker build --platform linux/amd64 -t bot .
 - `OpenAvoid` param (off by default): before this time, when 2+ enemies are seen within 120 m, take cover or move away instead of fighting (unless finishing). `AvoidN` / `AvoidR` set the count and radius.
 - `SquadUntil` param (off by default): use the practice-squad params only until this time, then the base (stealthier) params.
 - `HealAfter` param (default 0): hit-and-heal only applies after this time.
+- `HoldFire` param (default 0): never fire before this time (probe for whether house bystanders only attack once provoked).
 - Variant branches `giddy/<name>` set these through `ENV` lines in the `Dockerfile`.

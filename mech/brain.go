@@ -163,6 +163,7 @@ type Params struct {
 	HealAfter   float64
 	AvoidN      float64
 	AvoidR      float64
+	HoldFire    float64
 }
 
 func DefaultParams() Params {
@@ -212,6 +213,9 @@ func (b *Brain) Act(o *Obs) (act Action) {
 		}
 	}()
 	b.step(o, &act)
+	if o.T < b.P.HoldFire {
+		act.Fire = [2]bool{}
+	}
 	if act.Aim != nil {
 		a := act.Aim
 		if math.IsNaN(a[0]) || math.IsInf(a[0], 0) || math.IsNaN(a[1]) || math.IsInf(a[1], 0) {
